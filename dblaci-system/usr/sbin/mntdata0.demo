@@ -1,0 +1,9 @@
+#!/bin/sh
+#etalon
+export LDEV="/dev/sdsdsd"
+export TDIR="/mnt/sdsdsd"
+#optionális:
+#export MOUNTOPTS="noatime,compress,nossd"
+#export INIT="0"
+#export PASS="123456"
+/usr/sbin/mntdata0 $1

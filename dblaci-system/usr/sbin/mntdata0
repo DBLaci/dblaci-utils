@@ -1,0 +1,93 @@
+#!/bin/bash
+#LDEV="/dev/db500/de"
+#TDIR="/mnt/e"
+
+#KELL
+# LDEV: eszköz
+# TDIR: mount target
+
+CDEV=`basename $LDEV`
+function dbrmcryptsetup () {     
+    /sbin/cryptsetup remove $CDEV
+}
+function dbrmmount () {
+        umount $TDIR
+}
+
+case "$1" in
+    mnt)
+            if [ -z $PASS ]
+            then
+                /sbin/cryptsetup -c aes -s 256 -h ripemd160 create $CDEV $LDEV
+            else
+                echo $PASS | /sbin/cryptsetup -c aes -s 256 -h ripemd160 create $CDEV $LDEV
+            fi
+            if [ $? = 0 ];
+            then
+                if [ -z $MOUNTOPTS ]
+                then
+                    MOUNTOPTS="noatime,compress"
+                fi
+                ERROR=0
+                if [ "$INIT" = 1 ]
+                then
+                    echo "mount -o $MOUNTOPTS /dev/mapper/$CDEV $TDIR"
+                else
+                    if [ "$NOMOUNT" != "1" ]
+                    then
+                        mount -o $MOUNTOPTS /dev/mapper/$CDEV $TDIR
+                        ERROR=$?
+                    fi
+                fi
+                if [ $ERROR = 0 ]
+                then
+                    if [ "$NOMOUNT" != "1" ]
+                    then
+                        echo "Sikeres mount";
+                        if [ -e $TDIR"/autorun" ]
+                        then
+                            $TDIR"/autorun"
+                        fi
+                    fi
+                else
+                    echo $ERROR
+                    sleep 1
+                    dbrmcryptsetup
+                    echo "mount sikertelen. (rossz jelszo?)"
+                fi
+            else
+                dbrmcryptsetup
+                echo "cryptsetup sikertelen."
+            fi
+        ;;
+    umnt)
+        if [ "$NOMOUNT" != "1" ]
+        then
+            dbrmmount
+            if [ $? -ne 0 ]; then
+                echo "umount hiba"
+#           exit 2
+            fi
+        fi
+        dbrmcryptsetup
+        if [ $? -ne 0 ]; then
+            echo "cryptsetup eltavolitas hiba"
+            exit 2
+        fi
+        echo "Unmountolas sikeres."
+        ;;
+    *)
+        if [ "$NOMOUNT" = "1" ]
+        then
+            $0 mnt $2
+        else
+            DB=`mount | grep "$TDIR " | wc -l`
+            if [ $DB -eq 0 ]
+            then
+                $0 mnt $2
+            else
+                $0 umnt $2
+            fi
+        fi
+        ;;
+esac

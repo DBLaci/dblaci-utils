@@ -14,7 +14,8 @@ require('/usr/share/dblaci-utils/utils_console.php');
 
 require('config.php');
 
-class Replication {
+class Replication
+{
     public $config;
 
     public $remoteSudo = false;
@@ -53,6 +54,7 @@ class Replication {
             }
         }
     }
+
     public function getSshUserHost(): string
     {
         if (isset($this->config['remote_ssh'])) {
@@ -60,6 +62,7 @@ class Replication {
         }
         return 'root@' . $this->config['remote_host'];
     }
+
     public function isLocalSudo(): bool
     {
         return array_key_exists('localSudo', $this->config) && $this->config['localSudo'];
