@@ -1,0 +1,23 @@
+name: Build DEB Package
+
+on:
+  push:
+    tags:
+      - '*' # This will trigger the workflow for tags like 1.0, 2.1.3, etc.
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Extract tag name
+        id: tag_name
+        run: echo "::set-output name=TAG_NAME::$(git describe --tags --abbrev=0)"
+      - name: Build package
+        run: ./build.sh ${{ steps.tag_name.outputs.TAG_NAME }}
+      - name: Upload DEB Package
+        uses: actions/upload-artifact@v2
+        with:
+          name: dblaci-system-deb
+          path: builds/dblaci-system_${{ steps.tag_name.outputs.TAG_NAME }}.deb # Update this to the path where your .deb file is created
