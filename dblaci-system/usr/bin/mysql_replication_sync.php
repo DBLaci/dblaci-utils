@@ -186,7 +186,7 @@ if (!$config['live_sync']) {
     $r->removeRemoteSnapshot(true); // nem biztos, hogy létezik.
     echo2("<b>remote btrfs snapshot</b><br/>");
     $remote_sync_path = $config['remote_data_path'] . "/SYNC";
-    if ($config['remote_data_path_real_relative']) {
+    if (isset($config['remote_data_path_real_relative'])) {
         $remote_sync_path .= $config['remote_data_path_real_relative'];
     }
     $cmd = 'ssh ' . $r->getSshUserHost() . ' "' . ($r->remoteSudo ? 'sudo ' : '') . 'sync && ' . ($r->remoteSudo ? 'sudo ' : '') . 'btrfs su sn ' . escapeshellarg($config['remote_data_path']) . " " . escapeshellarg($r->getRemoteSnapshotPath()) . '" 2>&1';
