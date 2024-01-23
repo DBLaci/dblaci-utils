@@ -2,15 +2,16 @@
 <?php
 /**
  * (C) DBLaci 2013
- *
  */
-include('/usr/share/dblaci-utils/utils_console.php');
+require('/usr/share/dblaci-utils/utils_console.php');
 $all = false;
 
 $target = $argv[1];
 $balance = 25;
 foreach ($argv as $k => $arg) {
-    if ($k === 0) continue;
+    if ($k === 0) {
+        continue;
+    }
     if (count($argv) === 2) {
         break;// ez target az biztos.
     }
@@ -18,13 +19,13 @@ foreach ($argv as $k => $arg) {
         $balance = (int)$arg;
         echo2("Balance: " . $balance . "<br/>");
     } else {
-        $target = $arg;//ha nem szám, akkor target... :)
+        $target = $arg; // ha nem szám, akkor target... :)
     }
 }
 
 if ($target === 'all') {
     ob_start();
-    passthru("mount -t btrfs");
+    passthru('mount -t btrfs');
     $list0 = ob_get_clean();
     $m = preg_match_all("/(^.*? on (.*?) .*\$)+/m", $list0, $matches);
     foreach ($matches[2] as $mount) {
@@ -38,8 +39,8 @@ if ($target === 'all') {
 }
 if (is_array($list)) foreach ($list as $mount) {
     echo $mount . " defrag, optimalizálás!\n";
-    $cmd = "/sbin/btrfs fi de -v -c " . escapeshellarg($mount);
+    $cmd = 'btrfs fi de -v -c ' . escapeshellarg($mount);
     passthru($cmd);
-    $cmd = "/sbin/btrfs fi ba start -dusage=" . $balance . " -musage=" . $balance . " " . escapeshellarg($mount);
+    $cmd = 'btrfs fi ba start -dusage=' . $balance . ' -musage=' . $balance . ' ' . escapeshellarg($mount);
     passthru($cmd);
 }
