@@ -11,27 +11,46 @@
  * v6 2013-06-17: debug, üres adatbázis hibának tűnt
  * v7 2014-08-11: databases option nélkül nincs benne a USE a dumpban, ami jó, ha más néven kell restorozni.
  * v8 2021-04-13: PDO használata, php 7.4, utils_console upgrade
+ * v9 2026-05-14: config validálás (isset $backupbase, $user, $pass), --db= paraméter támogatás
+ *                  egyedi db backup retenció nélkül, nap/óra backup ütemezéshez
  */
 
 define('DEBUG', 0);
 require('/usr/share/dblaci-utils/utils_console.php');
-//alapértékek:
+
+// alapértékek:
 $delregi = true;
 $kivetel = [];
 $napig = 7;
 $host = '127.0.0.1';
-$archiv = true;
+$archiv = true; // Controls retention/archival: true = old backups organized into yearly/monthly folders, old files moved to _del
 $show_vanished = true;
+$single_db = null; // --db= paraméterrel megadott egyedi adatbázis
+$dump_to_dump_dir = false; // --dump flag: dump all backups to _dump folder instead of normal structure
 
+/**
+ * Required configuration variables (see etc/mysql_admin_config.php):
+ *
+ * $backupbase  (string) Base directory for backup storage, e.g. "/mnt/bak/mysql"
+ * $user        (string) MySQL username for authentication
+ * $pass        (string) MySQL password for authentication
+ * $napig       (int)    Keep daily backups for this many days (default: 7)
+ * $kivetel     (array)  List of database names to exclude from backup
+ * $show_vanished (bool) Show databases that no longer exist (default: true)
+ */
 $config_fn = '/etc/mysql_admin_config.php';
 
 foreach ($argv as $v) {
     if (preg_match("/^--config=(.*)\$/", $v, $tomb)) {
         $config_fn = $tomb[1];
     }
+    if (preg_match("/^--db=(.*)\$/", $v, $tomb)) {
+        $single_db = $tomb[1];
+    }
     if (preg_match("/^--help\$/", $v)) {
         echo2("--help         this help<br/>");
         echo2("--config=/path/to/config<br/>");
+        echo2("--db=name      backup only the specified database (archival limited to this db)<br/>");
         echo2("--dump         _dump mappába ment mindent.<br/>");
         echo2("--cron         csöndes kimenet, csak hibát ír ki<br/>");
         die();
@@ -41,11 +60,31 @@ foreach ($argv as $v) {
 
 global $silent;
 $silent = false;
-if (in_array('--dump', $argv)) $archiv = false;
+if (in_array('--dump', $argv)) {
+    $dump_to_dump_dir = true;
+    $archiv = false;
+}
 if (in_array('--cron', $argv)) $silent = true;
 
 
 require($config_fn);
+
+// Validate required config variables
+if (!isset($backupbase) || $backupbase === '') {
+    echo2("<span class=\"error_msg\">ERROR: Config variable \$backupbase is not set</span>\n");
+    die();
+}
+if (!isset($user) || $user === '') {
+    echo2("<span class=\"error_msg\">ERROR: Config variable \$user is not set</span>\n");
+    die();
+}
+if (!isset($pass) || $pass === '') {
+    echo2("<span class=\"error_msg\">ERROR: Config variable \$pass is not set</span>\n");
+    die();
+}
+
+// When --db= is used, disable retention for other databases
+// The single database backup will still be archived normally
 
 $path_del = $backupbase . "/_del/";
 
@@ -66,6 +105,7 @@ function unlink2($file)
     global $delregi;
     global $path_del;
     global $silent;
+    global $backupbase;
 
     if (!$delregi) {
         @mkdir($backupbase . "/_del");
@@ -85,26 +125,41 @@ $regi = date($date_format, time() - $napig * 24 * 3600);
 //echo $d;
 //http://vitobotta.com/smarter-faster-backups-restores-mysql-databases-with-mysqldump/#sthash.pa6t8vY1.dpbs
 //http://forums.mysql.com/read.php?28,357782,358064#msg-358064
-list($host0, $port) = explode(':', $host);
-$pars = "--create-options --skip-extended-insert --quick --add-locks --no-autocommit --single-transaction --host " . $host0 . " --user $user --password=$pass";
-if ($port) {
-    $pars .= " --port " . $port;
-}
+$parts = explode(':', $host);
+$host0 = $parts[0];
+$port = $parts[1] ?? 3306; // Ha nincs 1-es index, 3306-ot használ
+
+$pars = '--create-options --skip-extended-insert --quick --add-locks --no-autocommit --single-transaction --host ' . $host0 . " --user $user --password=$pass";
+$pars .= ' --port ' . $port;
 
 $pdo = new PDO('mysql:host=' . $host, $user, $pass, [PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
 $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-$sql = "SHOW DATABASES";
-$res = $pdo->query($sql);
-$db = [];
-while ($row = $res->fetch()) {
-    if (in_array($row['Database'], $kivetel)) {
-        continue;
-    }
-    $db[] = $row['Database'];
-    //print_r($row);
-}
 
-sort($db);
+// Determine database list: single DB from --db= or all databases
+if ($single_db !== null) {
+    // Validate that the specified database exists
+    $stmt = $pdo->prepare("SHOW DATABASES LIKE ?");
+    $stmt->execute([$single_db]);
+    $found = $stmt->fetch();
+    if (!$found) {
+        echo2("<span class=\"error_msg\">ERROR: Database '$single_db' does not exist</span>\n");
+        die();
+    }
+    $db = [$single_db];
+    echo2("<span class=\"ok_msg\">Single database mode: {$single_db}</span>\n");
+} else {
+    $sql = "SHOW DATABASES";
+    $res = $pdo->query($sql);
+    $db = [];
+    while ($row = $res->fetch()) {
+        if (in_array($row['Database'], $kivetel)) {
+            continue;
+        }
+        $db[] = $row['Database'];
+        //print_r($row);
+    }
+    sort($db);
+}
 
 //print_r($db);
 
@@ -123,6 +178,10 @@ if ($archiv) {
         $m = basename($m);
         if (in_array($m, array('_del', '_dump'))) {
             continue; // valószínű speciális
+        }
+        // In single_db mode, only archive the specified database
+        if ($single_db !== null && $m !== $single_db) {
+            continue; // skip other databases in single_db mode
         }
         if ($show_vanished && !in_array($m, $db)) {
             //kiírjuk, mert ez kb. hiba.
@@ -202,7 +261,7 @@ foreach ($db as $m) {
     }
 
     $dir = "$backupbase/$m/$m" . "_" . $most;
-    if (!$archiv) {
+    if ($dump_to_dump_dir) {
         @mkdir($backupbase . "/_dump");
         $dir = "$backupbase/_dump/$m";
     }
